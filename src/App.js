@@ -5,7 +5,7 @@ import { List, Input, Button } from 'antd';
 import 'antd/dist/reset.css';
 import { v4 as uuid } from 'uuid';
 import { listNotes } from './graphql/queries';
-import { onCreateNote } from './graphql/subscriptions';
+import { onCreateNote, onDeleteNote } from './graphql/subscriptions';
 import { 
     createNote as CreateNote,
     deleteNote as DeleteNote, 
@@ -26,11 +26,17 @@ function reducer(state, action) {
         case 'SET_NOTES':
             return { ...state, notes: action.notes, loading: false };
         case 'ADD_NOTE':
-            return { ...state, notes: [action.note, ...state.notes]}
+            return { ...state, notes: [action.note, ...state.notes]};
+        case 'REMOVE_NOTE':
+            const index = state.notes.findIndex(n => n.id === action.id);
+            const newNotes = [
+                ...state.notes.slice(0, index), // TODO add a filter?
+                ...state.notes.slice(index + 1)];
+            return{ ...state, notes: newNotes };       
         case 'RESET_FORM':
-            return { ...state, form: initialState.form }
+            return { ...state, form: initialState.form };
         case 'SET_INPUT':
-            return { ...state, form: { ...state.form, [action.name]: action.value } }    
+            return { ...state, form: { ...state.form, [action.name]: action.value } };    
         case 'ERROR':
             return { ...state, loading: false, error: true };
         default:
@@ -76,11 +82,6 @@ const createNote = async () => {
 };
 
 const deleteNote = async({ id }) => {
-    const index = state.notes.findIndex(n => n.id === id)
-    const notes = [
-      ...state.notes.slice(0, index), // TODO add a filter?
-      ...state.notes.slice(index + 1)];
-    dispatch({ type: 'SET_NOTES', notes })
     try {
       await API.graphql({
         query: DeleteNote,
@@ -113,8 +114,10 @@ const onChange = (e) => {
   };
 
       useEffect(() => {
+
         fetchNotes();
-        const subscription = API.graphql({
+
+        const createSubscription = API.graphql({
             query: onCreateNote
           })
             .subscribe({
@@ -124,7 +127,21 @@ const onChange = (e) => {
                 dispatch({ type: 'ADD_NOTE', note })
               }
             })
-            return () => subscription.unsubscribe();
+        
+        const deleteSubscription = API.graphql({
+            query: onDeleteNote
+            })
+            .subscribe({
+                next: noteData => {
+                const noteId = noteData.value.data.onDeleteNote.id
+                dispatch({ type: 'REMOVE_NOTE', id: noteId })
+                }
+            })
+
+        return () => {
+            createSubscription.unsubscribe();
+            deleteSubscription.unsubscribe();
+        }
       }, []);
 
     const styles = {
